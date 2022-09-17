@@ -140,6 +140,12 @@ where
     pub fn overlap(&self, start: I, stop: I) -> bool {
         self.start < stop && self.stop > start
     }
+
+    /// Check interval contains point (inclusive)
+    #[inline]
+    pub fn contains_inclusve(&self, point:I) -> bool {
+        self.start <= point && self.stop > point
+    }
 }
 
 impl<I, T> Ord for Interval<I, T>
@@ -622,8 +628,30 @@ where
                 start.checked_sub(&self.max_len).unwrap_or_else(zero::<I>),
                 &self.intervals,
             ),
-            start,
-            stop,
+            query: FindQuery::Interval(start, stop),
+        }
+    }
+
+    /// Find all intervals that cointain the point. 
+    /// This includes the start and end of the intervals
+    /// p \in [start .. stop]
+    ///
+    /// ```
+    /// use rust_lapper::{Lapper, Interval};
+    /// let lapper = Lapper::new((0..100).step_by(5)
+    ///                                 .map(|x| Interval{start: x, stop: x+2 , val: true})
+    ///                                 .collect::<Vec<Interval<usize, bool>>>());
+    /// assert_eq!(lapper.find_point(5).count(), 1);
+    /// ```
+    #[inline]
+    pub fn find_point(&self, point: I) -> IterFind<I, T> {
+        IterFind {
+            inner: self,
+            off: Self::lower_bound(
+                point.checked_sub(&self.max_len).unwrap_or_else(zero::<I>),
+                &self.intervals,
+            ),
+            query: FindQuery::Point(point),
         }
     }
 
@@ -662,10 +690,15 @@ where
         IterFind {
             inner: self,
             off: *cursor,
-            start,
-            stop,
+            query: FindQuery::Interval(start, stop),
         }
     }
+}
+
+#[derive(Debug)]
+pub enum FindQuery<I> {
+    Interval(I, I),
+    Point(I),
 }
 
 /// Find Iterator
@@ -677,8 +710,7 @@ where
 {
     inner: &'a Lapper<I, T>,
     off: usize,
-    start: I,
-    stop: I,
+    query: FindQuery<I>,
 }
 
 impl<'a, I, T> Iterator for IterFind<'a, I, T>
@@ -691,16 +723,31 @@ where
     #[inline]
     // interval.start < stop && interval.stop > start
     fn next(&mut self) -> Option<Self::Item> {
-        while self.off < self.inner.intervals.len() {
-            //let mut generator = self.inner.intervals[self.off..].iter();
-            //while let Some(interval) = generator.next() {
-            let interval = &self.inner.intervals[self.off];
-            self.off += 1;
-            if interval.overlap(self.start, self.stop) {
-                return Some(interval);
-            } else if interval.start >= self.stop {
-                break;
-            }
+        match self.query{
+            FindQuery::Interval(start, stop)=>{
+                while self.off < self.inner.intervals.len() {
+                    //let mut generator = self.inner.intervals[self.off..].iter();
+                    //while let Some(interval) = generator.next() {
+                    let interval = &self.inner.intervals[self.off];
+                    self.off += 1;
+                    if interval.overlap(start, stop) {
+                        return Some(interval);
+                    } else if interval.start >= stop {
+                        break;
+                    }
+                }
+            },
+            FindQuery::Point(point)=> {
+                while self.off < self.inner.intervals.len() {
+                    let interval = &self.inner.intervals[self.off];
+                    self.off += 1;
+                    if interval.contains_inclusve(point) {
+                        return Some(interval);
+                    } else if interval.start >= point {
+                        break;
+                    }
+                }
+            },
         }
         None
     }
