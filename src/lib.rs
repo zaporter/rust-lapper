@@ -654,6 +654,65 @@ where
             query: FindQuery::Point(point),
         }
     }
+    /// Find the start of an interval of `size` within `start`..`stop`
+    /// that has no Interval covering it 
+    /// ```
+    /// use rust_lapper::{Lapper, Interval};
+    /// let lapper = Lapper::new((0..100).step_by(10)
+    ///                                 .map(|x| Interval{start: x, stop: x+2 , val: true})
+    ///                                 .collect::<Vec<Interval<usize, bool>>>());
+    /// let lapper_empty = Lapper::<usize,usize>::new(vec![]);
+    /// assert_eq!(lapper.find_free_interval(0,100,10), None);
+    /// assert_eq!(lapper.find_free_interval(0,100,3), Some(2));
+    /// assert_eq!(lapper.find_free_interval(10,100,3), Some(12));
+    /// assert_eq!(lapper_empty.find_free_interval(10,100,3), Some(10));
+    /// assert_eq!(lapper_empty.find_free_interval(10,11,3), None);
+    /// assert_eq!(lapper_empty.find_free_interval(11,10,3), None);
+    /// ```
+    pub fn find_free_interval(&self, start:I, stop:I, size:I)->Option<I>{
+        if start > stop || stop-start < size {
+            // it is not possible
+            return None;
+        }
+        if self.intervals.len() == 0 {
+            return Some(start);
+        }
+        if self.intervals.len() == 1 {
+            let int_start = &self.intervals[0].start;
+            let int_stop = &self.intervals[0].stop;
+            if *int_start > start && *int_start - start > size {
+                return Some(*int_start);
+            }
+            if *int_stop < stop && stop - *int_stop < size {
+                return Some(*int_stop);
+            }
+            return None;
+        }
+        let mut off = Self::lower_bound(start, &self.intervals);
+        // start before range
+        if off > 0 {
+            off-=1;
+        }
+        while off < self.intervals.len()-1 {
+            let mut last_end = self.intervals[off].stop;
+            if last_end < start {
+                last_end = start;
+            }
+            let mut next_start =self.intervals[off+1].start;
+            if next_start > stop {
+                next_start= stop;
+            }
+            if next_start-last_end >= size {
+                return Some(last_end);
+            }
+            // No more intervals to check
+            if next_start==stop {
+                break;
+            }
+            off+=1;
+        }
+        None
+    }
 
     /// Find all intevals that overlap start .. stop. This method will work when queries
     /// to this lapper are in sorted (start) order. It uses a linear search from the last query
